@@ -421,17 +421,17 @@ function updateDashboard() {
     });
   });
   const reportPdf = document.getElementById("reportPdfBtn");
-  if (reportPdf) reportPdf.addEventListener("click", () => exportPdf(applyFilters(evaluationsCache), "Reporte con filtros activos", "filtros"));
+  if (reportPdf) reportPdf.addEventListener("click", () => exportPdf(applyFilters(evaluationsCache), "Reporte con filtros activos", "filtros", reportPdf));
   const reportCsv = document.getElementById("reportCsvBtn");
-  if (reportCsv) reportCsv.addEventListener("click", () => exportCsv(applyFilters(evaluationsCache), "evaluaciones-filtradas.csv"));
+  if (reportCsv) reportCsv.addEventListener("click", () => exportCsv(applyFilters(evaluationsCache), "evaluaciones-filtradas.csv", reportCsv));
   const allPdf = document.getElementById("allPdfBtn");
-  if (allPdf) allPdf.addEventListener("click", () => exportPdf(evaluationsCache, "Reporte completo de todas las evaluaciones", "todas"));
+  if (allPdf) allPdf.addEventListener("click", () => exportPdf(evaluationsCache, "Reporte completo de todas las evaluaciones", "todas", allPdf));
   const allCsv = document.getElementById("allCsvBtn");
-  if (allCsv) allCsv.addEventListener("click", () => exportCsv(evaluationsCache, "evaluaciones-todas.csv"));
+  if (allCsv) allCsv.addEventListener("click", () => exportCsv(evaluationsCache, "evaluaciones-todas.csv", allCsv));
   const cityPdf = document.getElementById("cityPdfBtn");
-  if (cityPdf) cityPdf.addEventListener("click", () => exportCityReport("pdf"));
+  if (cityPdf) cityPdf.addEventListener("click", () => exportCityReport("pdf", cityPdf));
   const cityCsv = document.getElementById("cityCsvBtn");
-  if (cityCsv) cityCsv.addEventListener("click", () => exportCityReport("csv"));
+  if (cityCsv) cityCsv.addEventListener("click", () => exportCityReport("csv", cityCsv));
 }
 
 function dashboardView(rows, stats) {
@@ -874,18 +874,19 @@ function openSupportModal() {
   modal.querySelector(".close-btn").addEventListener("click", () => modal.hidden = true);
 }
 
-function exportCityReport(format) {
+function exportCityReport(format, button) {
   const city = document.getElementById("reportCitySelect")?.value || cityOrder[0];
   const rows = evaluationsCache.filter((row) => row.city === city);
   const slug = slugify(city);
   if (format === "pdf") {
-    exportPdf(rows, `Reporte completo - ${city}`, `ciudad-${slug}`);
+    exportPdf(rows, `Reporte completo - ${city}`, `ciudad-${slug}`, button);
     return;
   }
-  exportCsv(rows, `evaluaciones-${slug}.csv`);
+  exportCsv(rows, `evaluaciones-${slug}.csv`, button);
 }
 
-function exportCsv(rows = applyFilters(evaluationsCache), filename = "evaluaciones-filtradas.csv") {
+function exportCsv(rows = applyFilters(evaluationsCache), filename = "evaluaciones-filtradas.csv", button) {
+  setExportStatus(button, "Generando...");
   const csv = [
     ["Fecha y hora", "Ciudad", "Tienda", "Idioma", "Evaluación", "Sugerencia", "Celular"],
     ...rows.map((row) => [
@@ -900,15 +901,13 @@ function exportCsv(rows = applyFilters(evaluationsCache), filename = "evaluacion
   ].map((line) => line.map((value) => `"${String(value || "").replace(/"/g, '""')}"`).join(",")).join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, filename);
+  showToast(`Descarga lista: ${filename}`);
+  setExportStatus(button, "Listo", true);
 }
 
-function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con filtros activos", scope = "filtros") {
+function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con filtros activos", scope = "filtros", button) {
+  setExportStatus(button, "Generando...");
   const stats = getStats(rows);
   const tableStart = 730;
   const rowHeight = 24;
@@ -991,7 +990,10 @@ function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con f
   doc.text(`Detalle completo de evaluaciones (${rows.length})`, margin, 705, 15, green, "bold");
   drawPdfTable(doc, rows, tableStart);
   doc.text("Reporte generado automaticamente por el sistema de evaluacion QR.", margin, 575, 8, [110, 116, 111]);
-  downloadBlob(doc.blob(), `reporte-evaluacion-${scope}-${new Date().toISOString().slice(0, 10)}.pdf`);
+  const filename = `reporte-evaluacion-${scope}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  downloadBlob(doc.blob(), filename);
+  showToast(`Descarga lista: ${filename}`);
+  setExportStatus(button, "Listo", true);
 }
 
 function slugify(value) {
@@ -1034,10 +1036,40 @@ function downloadBlob(blob, filename) {
   link.href = url;
   link.download = filename;
   link.style.display = "none";
+  link.rel = "noopener";
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 4000);
+}
+
+function setExportStatus(button, text, restore = false) {
+  if (!button) return;
+  if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+  button.textContent = text;
+  button.disabled = true;
+  if (restore) {
+    setTimeout(() => {
+      button.textContent = button.dataset.originalText;
+      button.disabled = false;
+    }, 1400);
+  }
+}
+
+function showToast(message) {
+  let toast = document.getElementById("exportToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "exportToast";
+    toast.className = "export-toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove("show"), 3600);
 }
 
 function createPdfDocument(pageH = 1191) {
