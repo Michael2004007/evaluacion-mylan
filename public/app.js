@@ -332,7 +332,8 @@ async function renderDashboard() {
     });
   });
   document.querySelector(".side-card .outline-btn").addEventListener("click", () => openSupportModal());
-  document.getElementById("exportBtn").addEventListener("click", exportPdf);
+  const topExportBtn = document.getElementById("exportBtn");
+  topExportBtn.addEventListener("click", () => exportPdf(applyFilters(evaluationsCache), "Reporte con filtros activos", "filtros", topExportBtn));
   updateDashboard();
 }
 
