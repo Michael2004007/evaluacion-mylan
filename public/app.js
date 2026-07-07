@@ -26,7 +26,7 @@ const copy = {
     bad: "Malo",
     suggestion: "¿Tenés alguna sugerencia?",
     placeholder: "Escribí tu sugerencia aquí...",
-    phoneHelp: "Si tu número no fue identificado automáticamente al leer el QR, registrá tu celular abajo.",
+    phoneHelp: "Ingresá tu número de teléfono para recibir descuentos y novedades.",
     phone: "Número de celular",
     phonePlaceholder: "+595 986444084",
     submit: "Enviar evaluación",
@@ -44,7 +44,7 @@ const copy = {
     bad: "Ruim",
     suggestion: "Tem alguma sugestão?",
     placeholder: "Escreva sua sugestão aqui...",
-    phoneHelp: "Se o seu número não foi identificado automaticamente ao ler o QR, registre seu celular abaixo.",
+    phoneHelp: "Informe seu número de telefone para receber descontos e novidades.",
     phone: "Número de celular",
     phonePlaceholder: "+55 11 98765-4321",
     submit: "Enviar avaliação",
@@ -55,8 +55,9 @@ const copy = {
 
 const cityOrder = ["Salto del Guairá", "Ciudad del Este", "Encarnación", "Pedro Juan Caballero", "Asunción"];
 const ratingScore = { good: 5, neutral: 3, bad: 1 };
-const ratingEmoji = { good: "😊", neutral: "😐", bad: "☹️" };
+const ratingEmoji = { good: "😊", neutral: "🤔", bad: "😞" };
 let evaluationsCache = [];
+let activeDashboardView = "dashboard";
 
 function storeTitle(store) {
   return store.label || store.name;
@@ -278,12 +279,12 @@ async function renderDashboard() {
           </div>
         </div>
         <nav class="nav">
-          ${navButton("▣", "Dashboard", true)}
-          ${navButton("☑", "Evaluaciones")}
-          ${navButton("◈", "Ciudades")}
-          ${navButton("▤", "Tiendas")}
-          ${navButton("▥", "Reportes")}
-          ${navButton("⚙", "Configuración")}
+          ${navButton("▣", "Dashboard", "dashboard", true)}
+          ${navButton("☑", "Evaluaciones", "evaluations")}
+          ${navButton("◈", "Ciudades", "cities")}
+          ${navButton("▤", "Tiendas", "stores")}
+          ${navButton("▥", "Reportes", "reports")}
+          ${navButton("⚙", "Configuración", "settings")}
         </nav>
         <div class="side-card">
           <strong>¿Necesitas ayuda?</strong>
@@ -299,7 +300,7 @@ async function renderDashboard() {
           </div>
           <div class="actions">
             <input class="search" id="search" placeholder="Buscar...">
-            <button class="outline-btn" id="exportBtn">⇩ Exportar reporte</button>
+            <button class="outline-btn" id="exportBtn">⇩ Exportar PDF</button>
           </div>
         </div>
         <section class="filters">
@@ -323,12 +324,20 @@ async function renderDashboard() {
   ["cityFilter", "storeFilter", "periodFilter", "langFilter", "ratingFilter", "search"].forEach((id) => {
     document.getElementById(id).addEventListener("input", updateDashboard);
   });
-  document.getElementById("exportBtn").addEventListener("click", exportCsv);
+  document.querySelectorAll(".nav button").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeDashboardView = button.dataset.view;
+      document.querySelectorAll(".nav button").forEach((item) => item.classList.toggle("active", item === button));
+      updateDashboard();
+    });
+  });
+  document.querySelector(".side-card .outline-btn").addEventListener("click", () => openSupportModal());
+  document.getElementById("exportBtn").addEventListener("click", exportPdf);
   updateDashboard();
 }
 
-function navButton(icon, label, active = false) {
-  return `<button class="${active ? "active" : ""}"><span>${icon}</span>${label}</button>`;
+function navButton(icon, label, view, active = false) {
+  return `<button class="${active ? "active" : ""}" data-view="${view}" type="button"><span>${icon}</span>${label}</button>`;
 }
 
 function filterSelect(id, label, options) {
@@ -381,12 +390,49 @@ function applyFilters(rows) {
 function updateDashboard() {
   const rows = applyFilters(evaluationsCache);
   const stats = getStats(rows);
-  document.getElementById("dashboardContent").innerHTML = `
+  const content = {
+    dashboard: dashboardView(rows, stats),
+    evaluations: evaluationsView(rows, stats),
+    cities: citiesView(rows),
+    stores: storesView(rows),
+    reports: reportsView(rows, stats),
+    settings: settingsView(),
+  }[activeDashboardView] || dashboardView(rows, stats);
+
+  document.getElementById("dashboardContent").innerHTML = content;
+
+  document.querySelectorAll("[data-detail-store]").forEach((button) => {
+    button.addEventListener("click", () => openStoreDetail(button.dataset.detailStore));
+  });
+  document.querySelectorAll("[data-view-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeDashboardView = button.dataset.viewAction;
+      document.querySelectorAll(".nav button").forEach((item) => {
+        item.classList.toggle("active", item.dataset.view === activeDashboardView);
+      });
+      updateDashboard();
+    });
+  });
+  document.querySelectorAll("[data-copy-link]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(button.dataset.copyLink);
+      button.textContent = "Copiado";
+      setTimeout(() => button.textContent = "Copiar link", 1200);
+    });
+  });
+  const reportPdf = document.getElementById("reportPdfBtn");
+  if (reportPdf) reportPdf.addEventListener("click", exportPdf);
+  const reportCsv = document.getElementById("reportCsvBtn");
+  if (reportCsv) reportCsv.addEventListener("click", exportCsv);
+}
+
+function dashboardView(rows, stats) {
+  return `
     <section class="kpis">
       ${kpi("▣", "Total evaluaciones", stats.total, "↗ Datos filtrados")}
       ${kpi("😊", "Bom / Bueno", stats.good, `${stats.goodPct}% del total`)}
-      ${kpi("😐", "Neutro", stats.neutral, `${stats.neutralPct}% del total`, "yellow")}
-      ${kpi("☹️", "Ruim / Malo", stats.bad, `${stats.badPct}% del total`, "red")}
+      ${kpi("🤔", "Neutro", stats.neutral, `${stats.neutralPct}% del total`, "yellow")}
+      ${kpi("😞", "Ruim / Malo", stats.bad, `${stats.badPct}% del total`, "red")}
       ${kpi("☆", "Satisfaccion general", `${stats.score} / 5`, "Promedio ponderado")}
     </section>
     <section class="analytics">
@@ -398,10 +444,101 @@ function updateDashboard() {
     ${citySections(rows)}
     ${recentTable(rows)}
   `;
+}
 
-  document.querySelectorAll("[data-detail-store]").forEach((button) => {
-    button.addEventListener("click", () => openStoreDetail(button.dataset.detailStore));
-  });
+function evaluationsView(rows, stats) {
+  return `
+    <section class="kpis">
+      ${kpi("☑", "Evaluaciones filtradas", stats.total, "Tabla completa")}
+      ${kpi("😊", "Positivas", stats.good, `${stats.goodPct}% del total`)}
+      ${kpi("🤔", "Neutras", stats.neutral, `${stats.neutralPct}% del total`, "yellow")}
+      ${kpi("😞", "Negativas", stats.bad, `${stats.badPct}% del total`, "red")}
+      ${kpi("☆", "Promedio", `${stats.score} / 5`, "Satisfacción")}
+    </section>
+    ${recentTable(rows, "Todas las evaluaciones", 60)}
+  `;
+}
+
+function citiesView(rows) {
+  return `
+    <section class="analytics city-analytics">
+      ${cityBars(rows)}
+      ${donutPanel(getStats(rows))}
+    </section>
+    ${cityOrder.map((city) => {
+      const cityRows = rows.filter((row) => row.city === city);
+      const stats = getStats(cityRows);
+      return `
+        <article class="panel city-summary">
+          <div>
+            <h2>${city}</h2>
+            <p>${stats.total} evaluaciones · ${stats.score} / 5 satisfacción</p>
+          </div>
+          <div class="summary-metrics">
+            <strong>${stats.goodPct}% Bueno</strong>
+            <strong>${stats.neutralPct}% Neutro</strong>
+            <strong>${stats.badPct}% Malo</strong>
+          </div>
+        </article>
+      `;
+    }).join("")}
+  `;
+}
+
+function storesView(rows) {
+  return citySections(rows);
+}
+
+function reportsView(rows, stats) {
+  const best = bestStore(rows);
+  const worst = worstStore(rows);
+  return `
+    <section class="report-hero">
+      <div>
+        <span>Reporte ejecutivo</span>
+        <h2>Experiencia de atención por tienda</h2>
+        <p>Exportá un PDF premium con los mismos filtros activos del dashboard, métricas, ranking, distribución y últimas respuestas.</p>
+      </div>
+      <div class="report-actions">
+        <button class="submit-btn compact" id="reportPdfBtn" type="button">Exportar PDF profesional</button>
+        <button class="outline-btn" id="reportCsvBtn" type="button">Descargar CSV</button>
+      </div>
+    </section>
+    <section class="kpis">
+      ${kpi("▣", "Total incluido", stats.total, "Según filtros")}
+      ${kpi("☆", "Satisfacción", `${stats.score} / 5`, "Promedio")}
+      ${kpi("😊", "Mejor tienda", best.name, best.note)}
+      ${kpi("😞", "Más negativas", worst.name, worst.note, "red")}
+      ${kpi("▥", "Formato", "PDF", "Visual ejecutivo")}
+    </section>
+    ${recentTable(rows, "Datos incluidos en el reporte", 12)}
+  `;
+}
+
+function settingsView() {
+  const origin = window.location.origin;
+  return `
+    <article class="panel">
+      <div class="panel-head">
+        <h2>Links QR por tienda</h2>
+        <strong>${Object.keys(stores).length} sucursales</strong>
+      </div>
+      <div class="qr-grid">
+        ${Object.values(stores).map((store) => {
+          const link = `${origin}/avaliar/${store.name}`;
+          return `
+            <div class="qr-row">
+              <div>
+                <strong>${storeTitle(store)}</strong>
+                <span>${store.displayCity} · ${store.bilingual ? "ES / PT" : "ES"}</span>
+              </div>
+              <button class="outline-btn" data-copy-link="${link}" type="button">Copiar link</button>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </article>
+  `;
 }
 
 function getStats(rows) {
@@ -529,6 +666,30 @@ function rankingPanel(rows) {
   `;
 }
 
+function bestStore(rows) {
+  const ranked = storeRanking(rows);
+  const best = ranked[0];
+  return best ? { name: storeTitle(stores[best.store]), note: `${best.avg.toFixed(2).replace(".", ",")} / 5` } : { name: "-", note: "Sin datos" };
+}
+
+function worstStore(rows) {
+  const ranked = Object.keys(stores).map((store) => {
+    const storeRows = rows.filter((row) => row.store === store);
+    const bad = storeRows.filter((row) => row.rating === "bad").length;
+    return { store, bad, total: storeRows.length };
+  }).filter((item) => item.total).sort((a, b) => b.bad - a.bad);
+  const worst = ranked[0];
+  return worst ? { name: storeTitle(stores[worst.store]), note: `${worst.bad} negativas` } : { name: "-", note: "Sin datos" };
+}
+
+function storeRanking(rows) {
+  return Object.keys(stores).map((store) => {
+    const storeRows = rows.filter((row) => row.store === store);
+    const avg = storeRows.length ? storeRows.reduce((sum, row) => sum + ratingScore[row.rating], 0) / storeRows.length : 0;
+    return { store, avg, total: storeRows.length };
+  }).filter((item) => item.total).sort((a, b) => b.avg - a.avg);
+}
+
 function citySections(rows) {
   return cityOrder.map((city) => {
     const cityStores = Object.values(stores).filter((store) => store.city === city);
@@ -560,8 +721,8 @@ function storeCard(store, rows) {
   `;
 }
 
-function recentTable(rows, title = "Respuestas recientes") {
-  const visible = rows.slice(0, 8);
+function recentTable(rows, title = "Respuestas recientes", limit = 8) {
+  const visible = rows.slice(0, limit);
   return `
     <article class="panel table-panel">
       <div class="panel-head"><h2>${title}</h2><strong>${rows.length} registros</strong></div>
@@ -634,8 +795,8 @@ function openStoreDetail(storeName) {
       <div class="modal-body">
         <section class="kpis">
           ${kpi("😊", "Bueno / Bom", stats.good, `${stats.goodPct}%`)}
-          ${kpi("😐", "Neutro", stats.neutral, `${stats.neutralPct}%`, "yellow")}
-          ${kpi("☹️", "Malo / Ruim", stats.bad, `${stats.badPct}%`, "red")}
+          ${kpi("🤔", "Neutro", stats.neutral, `${stats.neutralPct}%`, "yellow")}
+          ${kpi("😞", "Malo / Ruim", stats.bad, `${stats.badPct}%`, "red")}
           ${kpi("☆", "Promedio", `${stats.score} / 5`, "Satisfacción")}
           ${kpi("▣", "Total", stats.total, "Respuestas")}
         </section>
@@ -654,6 +815,32 @@ function openStoreDetail(storeName) {
   }, { once: true });
 }
 
+function openSupportModal() {
+  const modal = document.getElementById("storeModal");
+  modal.innerHTML = `
+    <section class="modal-card support-modal">
+      <div class="modal-head">
+        <div>
+          <h2>Soporte administrativo</h2>
+          <p>Canal interno para asistencia del dashboard y reportes.</p>
+        </div>
+        <button class="close-btn" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <section class="kpis">
+          ${kpi("☎", "WhatsApp", "+595 986444084", "Atención comercial")}
+          ${kpi("▥", "Reportes", "PDF / CSV", "Exportación activa")}
+          ${kpi("▣", "Sucursales", Object.keys(stores).length, "Tiendas configuradas")}
+          ${kpi("☆", "Estado", "Online", "Sistema operativo")}
+          ${kpi("⚙", "Deploy", "Railway", "Producción")}
+        </section>
+      </div>
+    </section>
+  `;
+  modal.hidden = false;
+  modal.querySelector(".close-btn").addEventListener("click", () => modal.hidden = true);
+}
+
 function exportCsv() {
   const rows = applyFilters(evaluationsCache);
   const csv = [
@@ -668,6 +855,196 @@ function exportCsv() {
   link.download = "reporte-evaluaciones.csv";
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function exportPdf() {
+  const rows = applyFilters(evaluationsCache);
+  const stats = getStats(rows);
+  const doc = createPdfDocument();
+  const margin = 42;
+  const pageW = 842;
+  const green = [5, 40, 21];
+  const green2 = [38, 115, 58];
+  const gold = [191, 138, 19];
+  const red = [217, 39, 28];
+  const yellow = [241, 173, 25];
+  const line = [229, 226, 218];
+
+  doc.rect(0, 0, pageW, 112, [248, 250, 246]);
+  doc.circle(66, 55, 22, null, gold, 2);
+  doc.text("A", 58, 64, 24, green, "bold");
+  doc.text("AVALIACAO", 100, 48, 24, green, "bold");
+  doc.text("EXPERIENCIA QUE CONECTA", 101, 67, 8, gold, "bold");
+  doc.text("Reporte ejecutivo de evaluacion de atencion", margin, 104, 20, green, "bold");
+  doc.text(`Generado: ${new Date().toLocaleString("es-PY")}`, 620, 104, 9, [91, 98, 93]);
+
+  const filters = getFilters();
+  doc.text(`Filtros: Ciudad ${filters.city} | Tienda ${filters.store} | Periodo ${filters.period} | Idioma ${filters.lang} | Evaluacion ${filters.rating}`, margin, 130, 9, [91, 98, 93]);
+
+  const cards = [
+    ["Total evaluaciones", stats.total, green2],
+    ["Bueno / Bom", `${stats.good} (${stats.goodPct}%)`, green2],
+    ["Neutro", `${stats.neutral} (${stats.neutralPct}%)`, yellow],
+    ["Malo / Ruim", `${stats.bad} (${stats.badPct}%)`, red],
+    ["Satisfaccion", `${stats.score} / 5`, gold],
+  ];
+  cards.forEach((card, index) => {
+    const x = margin + index * 150;
+    doc.roundRect(x, 154, 136, 72, 8, [255, 255, 255], line);
+    doc.circle(x + 24, 190, 18, tint(card[2]), card[2], 1);
+    doc.text(String(card[1]), x + 50, 190, 17, green, "bold");
+    doc.text(card[0], x + 50, 207, 8, [65, 74, 68], "bold");
+  });
+
+  doc.text("Evaluaciones por ciudad", margin, 264, 15, green, "bold");
+  const cityCounts = cityOrder.map((city) => ({ city, count: rows.filter((row) => row.city === city).length }));
+  const maxCity = Math.max(1, ...cityCounts.map((item) => item.count));
+  cityCounts.forEach((item, index) => {
+    const x = margin + index * 80;
+    const h = Math.max(8, (item.count / maxCity) * 95);
+    doc.rect(x, 382 - h, 34, h, green2);
+    doc.text(String(item.count), x, 398, 9, green, "bold");
+    doc.text(item.city, x, 414, 7, [65, 74, 68]);
+  });
+
+  doc.text("Distribucion", 500, 264, 15, green, "bold");
+  [
+    ["Bueno / Bom", stats.goodPct, green2],
+    ["Neutro", stats.neutralPct, yellow],
+    ["Malo / Ruim", stats.badPct, red],
+  ].forEach((item, index) => {
+    const y = 295 + index * 38;
+    doc.text(item[0], 500, y, 10, [65, 74, 68], "bold");
+    doc.roundRect(590, y - 11, 160, 10, 5, [236, 238, 233]);
+    doc.roundRect(590, y - 11, Math.max(2, item[1] * 1.6), 10, 5, item[2]);
+    doc.text(`${item[1]}%`, 762, y, 9, green, "bold");
+  });
+
+  doc.text("Rendimiento por tienda", margin, 462, 15, green, "bold");
+  storeRanking(rows).slice(0, 8).forEach((item, index) => {
+    const y = 492 + index * 24;
+    const width = (item.avg / 5) * 260;
+    doc.text(storeTitle(stores[item.store]), margin, y, 9, [42, 49, 44], "bold");
+    doc.roundRect(238, y - 9, 280, 8, 4, [236, 238, 233]);
+    doc.roundRect(238, y - 9, width, 8, 4, green2);
+    doc.text(`${item.avg.toFixed(2).replace(".", ",")} / 5`, 535, y, 9, green, "bold");
+  });
+
+  doc.text("Ultimas respuestas", margin, 705, 15, green, "bold");
+  drawPdfTable(doc, rows.slice(0, 10), 730);
+  doc.text("Reporte generado automaticamente por el sistema de evaluacion QR.", margin, 575, 8, [110, 116, 111]);
+  downloadBlob(doc.blob(), `reporte-evaluacion-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function tint(rgb) {
+  return rgb.map((value) => Math.round(value + (255 - value) * 0.86));
+}
+
+function drawPdfTable(doc, rows, startY) {
+  const cols = [42, 128, 222, 334, 386, 462, 676];
+  const headers = ["Fecha", "Ciudad", "Tienda", "Idioma", "Eval.", "Sugerencia", "Celular"];
+  doc.roundRect(38, startY - 20, 766, 28, 6, [245, 250, 242]);
+  headers.forEach((header, index) => doc.text(header, cols[index], startY - 2, 8, [5, 40, 21], "bold"));
+  rows.forEach((row, index) => {
+    const y = startY + 22 + index * 24;
+    doc.line(38, y - 14, 804, y - 14, [232, 230, 223]);
+    const values = [
+      formatDate(row.createdAt),
+      row.city,
+      storeTitle(stores[row.store] || { name: row.store }),
+      row.language.toUpperCase(),
+      ratingLabel(row),
+      row.suggestion || "-",
+      row.phone || "-",
+    ];
+    values.forEach((value, col) => doc.text(value, cols[col], y, col === 4 ? 8 : 7, [42, 49, 44], col === 4 ? "bold" : "regular", col === 5 ? 32 : 18));
+  });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function createPdfDocument() {
+  const objects = [];
+  let content = "";
+  const pageH = 1191;
+  const esc = (text) => String(text ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/[()\\]/g, "\\$&");
+  const color = (rgb) => `${rgb.map((v) => (v / 255).toFixed(3)).join(" ")} rg`;
+  const stroke = (rgb) => `${rgb.map((v) => (v / 255).toFixed(3)).join(" ")} RG`;
+  const add = (line) => { content += `${line}\n`; };
+  const font = (weight) => weight === "bold" ? "F2" : "F1";
+  return {
+    text(text, x, y, size = 10, rgb = [0, 0, 0], weight = "regular", maxChars = 60) {
+      const lines = wrapPdfText(esc(text), maxChars);
+      lines.slice(0, 2).forEach((line, index) => {
+        add(`BT /${font(weight)} ${size} Tf ${rgb.map((v) => (v / 255).toFixed(3)).join(" ")} rg ${x} ${pageH - y - index * (size + 3)} Td (${line}) Tj ET`);
+      });
+    },
+    rect(x, y, w, h, fill, border) {
+      if (fill) add(`${color(fill)} ${x} ${pageH - y - h} ${w} ${h} re f`);
+      if (border) add(`${stroke(border)} ${x} ${pageH - y - h} ${w} ${h} re S`);
+    },
+    roundRect(x, y, w, h, r, fill, border) {
+      this.rect(x, y, w, h, fill, border);
+    },
+    line(x1, y1, x2, y2, rgb) {
+      add(`${stroke(rgb)} ${x1} ${pageH - y1} m ${x2} ${pageH - y2} l S`);
+    },
+    circle(x, y, r, fill, border, width = 1) {
+      const c = 0.5522847498 * r;
+      if (fill) add(color(fill));
+      if (border) add(`${stroke(border)} ${width} w`);
+      add(`${x + r} ${pageH - y} m ${x + r} ${pageH - (y - c)} ${x + c} ${pageH - (y - r)} ${x} ${pageH - (y - r)} c ${x - c} ${pageH - (y - r)} ${x - r} ${pageH - (y - c)} ${x - r} ${pageH - y} c ${x - r} ${pageH - (y + c)} ${x - c} ${pageH - (y + r)} ${x} ${pageH - (y + r)} c ${x + c} ${pageH - (y + r)} ${x + r} ${pageH - (y + c)} ${x + r} ${pageH - y} c ${fill ? "f" : "S"}`);
+    },
+    blob() {
+      objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+      objects.push("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+      objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 ${pageH}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`);
+      objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+      objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+      objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
+      let pdf = "%PDF-1.4\n";
+      const xref = [0];
+      objects.forEach((object, index) => {
+        xref.push(pdf.length);
+        pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+      });
+      const xrefStart = pdf.length;
+      pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+      xref.slice(1).forEach((offset) => { pdf += `${String(offset).padStart(10, "0")} 00000 n \n`; });
+      pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+      return new Blob([pdf], { type: "application/pdf" });
+    },
+  };
+}
+
+function wrapPdfText(text, maxChars) {
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    if (`${line} ${word}`.trim().length > maxChars) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = `${line} ${word}`.trim();
+    }
+  });
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
 }
 
 function demoEvaluations() {

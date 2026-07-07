@@ -903,6 +903,109 @@ select:focus {
   background: var(--green-700);
 }
 
+.city-analytics {
+  grid-template-columns: 1.2fr 0.8fr;
+}
+
+.city-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  min-height: 96px;
+  margin-bottom: 12px;
+}
+
+.city-summary h2,
+.report-hero h2 {
+  margin: 0;
+  color: var(--green-950);
+}
+
+.city-summary p,
+.report-hero p,
+.qr-row span {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.summary-metrics {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.summary-metrics strong {
+  padding: 8px 10px;
+  border-radius: 999px;
+  color: var(--green-900);
+  background: var(--green-50);
+  font-size: 12px;
+}
+
+.report-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(191, 138, 19, 0.12), transparent 35%),
+    linear-gradient(135deg, #ffffff, #f3f9ef);
+  box-shadow: var(--soft-shadow);
+}
+
+.report-hero span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.report-actions {
+  display: grid;
+  gap: 10px;
+  min-width: 230px;
+}
+
+.submit-btn.compact {
+  height: 48px;
+  margin-top: 0;
+  font-size: 15px;
+}
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.qr-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf9;
+}
+
+.qr-row strong,
+.qr-row span {
+  display: block;
+}
+
+.support-modal .kpis {
+  grid-template-columns: repeat(5, 1fr);
+}
+
 .city-section {
   margin-top: 18px;
 }
@@ -1164,8 +1267,15 @@ th {
   .filters,
   .kpis,
   .analytics,
-  .stores-grid {
+  .stores-grid,
+  .qr-grid {
     grid-template-columns: 1fr;
+  }
+
+  .report-hero,
+  .city-summary,
+  .qr-row {
+    display: grid;
   }
 
   .donut-row {
