@@ -309,6 +309,9 @@ async function renderDashboard() {
           ${filterSelect("periodFilter", "Periodo", ["Todo", "Últimos 7 días", "Últimos 30 días", "Este mes"])}
           ${filterSelect("langFilter", "Idioma", ["ES / PT", "ES", "PT"])}
           ${filterSelect("ratingFilter", "Evaluación", ["Todas", "Bueno / Bom", "Neutro", "Malo / Ruim"])}
+          ${filterInput("dateFromFilter", "Desde", "date")}
+          ${filterInput("dateToFilter", "Hasta", "date")}
+          ${filterInput("monthFilter", "Mes específico", "month")}
         </section>
         <div id="dashboardContent"></div>
       </section>
@@ -321,7 +324,7 @@ async function renderDashboard() {
     evaluationsCache = demoEvaluations();
   }
 
-  ["cityFilter", "storeFilter", "periodFilter", "langFilter", "ratingFilter", "search"].forEach((id) => {
+  ["cityFilter", "storeFilter", "periodFilter", "langFilter", "ratingFilter", "dateFromFilter", "dateToFilter", "monthFilter", "search"].forEach((id) => {
     document.getElementById(id).addEventListener("input", updateDashboard);
   });
   document.querySelectorAll(".nav button").forEach((button) => {
@@ -352,6 +355,15 @@ function filterSelect(id, label, options) {
   `;
 }
 
+function filterInput(id, label, type) {
+  return `
+    <label>
+      <span>${label}</span>
+      <input id="${id}" type="${type}">
+    </label>
+  `;
+}
+
 function getFilters() {
   return {
     city: document.getElementById("cityFilter").value,
@@ -359,6 +371,9 @@ function getFilters() {
     period: document.getElementById("periodFilter").value,
     lang: document.getElementById("langFilter").value,
     rating: document.getElementById("ratingFilter").value,
+    dateFrom: document.getElementById("dateFromFilter").value,
+    dateTo: document.getElementById("dateToFilter").value,
+    month: document.getElementById("monthFilter").value,
     search: document.getElementById("search").value.trim().toLowerCase(),
   };
 }
@@ -373,8 +388,20 @@ function applyFilters(rows) {
     if (filters.rating === "Bueno / Bom" && row.rating !== "good") return false;
     if (filters.rating === "Neutro" && row.rating !== "neutral") return false;
     if (filters.rating === "Malo / Ruim" && row.rating !== "bad") return false;
-    if (filters.period !== "Todo") {
-      const created = new Date(row.createdAt);
+    const created = new Date(row.createdAt);
+    if (filters.month) {
+      const [year, month] = filters.month.split("-").map(Number);
+      if (created.getFullYear() !== year || created.getMonth() !== month - 1) return false;
+    }
+    if (filters.dateFrom) {
+      const from = new Date(`${filters.dateFrom}T00:00:00`);
+      if (created < from) return false;
+    }
+    if (filters.dateTo) {
+      const to = new Date(`${filters.dateTo}T23:59:59.999`);
+      if (created > to) return false;
+    }
+    if (!filters.month && !filters.dateFrom && !filters.dateTo && filters.period !== "Todo") {
       const days = (now - created) / 86400000;
       if (filters.period === "Últimos 7 días" && days > 7) return false;
       if (filters.period === "Últimos 30 días" && days > 30) return false;
@@ -386,6 +413,14 @@ function applyFilters(rows) {
     }
     return true;
   });
+}
+
+function dateFilterLabel(filters) {
+  if (filters.month) return `Mes ${filters.month}`;
+  if (filters.dateFrom && filters.dateTo) return `Desde ${filters.dateFrom} hasta ${filters.dateTo}`;
+  if (filters.dateFrom) return `Desde ${filters.dateFrom}`;
+  if (filters.dateTo) return `Hasta ${filters.dateTo}`;
+  return filters.period;
 }
 
 function updateDashboard() {
@@ -416,10 +451,20 @@ function updateDashboard() {
   });
   document.querySelectorAll("[data-copy-link]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(button.dataset.copyLink);
-      button.textContent = "Copiado";
-      setTimeout(() => button.textContent = "Copiar link", 1200);
+      const originalText = button.textContent;
+      try {
+        await copyToClipboard(button.dataset.copyLink);
+        button.textContent = "Copiado";
+        showToast("Link QR copiado correctamente.");
+      } catch {
+        button.textContent = "No copiado";
+        showToast("No se pudo copiar automaticamente. Selecciona y copia el link manualmente.");
+      }
+      setTimeout(() => button.textContent = originalText, 1400);
     });
+  });
+  document.querySelectorAll("[data-delete-city]").forEach((button) => {
+    button.addEventListener("click", () => deleteCityEvaluations(button.dataset.deleteCity, button));
   });
   const reportPdf = document.getElementById("reportPdfBtn");
   if (reportPdf) reportPdf.addEventListener("click", () => exportPdf(applyFilters(evaluationsCache), "Reporte con filtros activos", "filtros", reportPdf));
@@ -487,6 +532,7 @@ function citiesView(rows) {
             <strong>${stats.goodPct}% Bueno</strong>
             <strong>${stats.neutralPct}% Neutro</strong>
             <strong>${stats.badPct}% Malo</strong>
+            <button class="danger-btn" data-delete-city="${city}" type="button" ${stats.total ? "" : "disabled"}>Vaciar ciudad</button>
           </div>
         </article>
       `;
@@ -572,7 +618,111 @@ function settingsView() {
         }).join("")}
       </div>
     </article>
+    <article class="panel danger-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Borrar evaluaciones por ciudad</h2>
+          <p>Elimina definitivamente todas las respuestas de una ciudad seleccionada. Esta acción no se puede deshacer.</p>
+        </div>
+        <strong>Zona crítica</strong>
+      </div>
+      <div class="delete-city-grid">
+        ${cityOrder.map((city) => {
+          const total = evaluationsCache.filter((row) => row.city === city).length;
+          return `
+            <div class="delete-city-row">
+              <div>
+                <strong>${city}</strong>
+                <span>${total} evaluaciones registradas</span>
+              </div>
+              <button class="danger-btn" data-delete-city="${city}" type="button" ${total ? "" : "disabled"}>Borrar ciudad</button>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </article>
   `;
+}
+
+async function deleteCityEvaluations(city, button) {
+  const total = evaluationsCache.filter((row) => row.city === city).length;
+  if (!total) {
+    showToast(`No hay evaluaciones para borrar en ${city}.`);
+    return;
+  }
+
+  const confirmed = await confirmCityDeletion(city, total);
+  if (!confirmed) return;
+
+  button.disabled = true;
+  button.textContent = "Borrando...";
+
+  try {
+    const response = await fetch(`/api/evaluations/city/${encodeURIComponent(city)}`, { method: "DELETE" });
+    if (!response.ok) throw new Error("No se pudo borrar");
+    const result = await response.json();
+    evaluationsCache = await loadEvaluations();
+    showToast(`Se eliminaron ${result.deleted} evaluaciones de ${city}.`);
+    updateDashboard();
+  } catch {
+    button.disabled = false;
+    button.textContent = "Borrar ciudad";
+    showToast(`No se pudo borrar ${city}. Intentá de nuevo.`);
+  }
+}
+
+function confirmCityDeletion(city, total) {
+  const modal = document.getElementById("storeModal");
+  let step = 1;
+
+  return new Promise((resolve) => {
+    const close = (value) => {
+      modal.hidden = true;
+      modal.innerHTML = "";
+      resolve(value);
+    };
+
+    const renderStep = () => {
+      modal.innerHTML = `
+        <section class="modal-card confirm-modal">
+          <div class="modal-head">
+            <div>
+              <span class="danger-eyebrow">Confirmacion ${step} de 2</span>
+              <h2>${step === 1 ? "Vaciar validaciones de ciudad" : "Ultima confirmacion requerida"}</h2>
+              <p>${step === 1
+                ? `Estas por eliminar ${total} validaciones registradas en ${city}.`
+                : `Esta accion eliminara definitivamente todas las validaciones de ${city}.`}</p>
+            </div>
+            <button class="close-btn" data-confirm-cancel aria-label="Cerrar">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="delete-warning">
+              <strong>${city}</strong>
+              <span>${total} validaciones seran borradas del dashboard, reportes y metricas.</span>
+            </div>
+            <div class="confirm-actions">
+              <button class="outline-btn" data-confirm-cancel type="button">Cancelar</button>
+              <button class="danger-btn" data-confirm-next type="button">${step === 1 ? "Si, continuar" : "Eliminar definitivamente"}</button>
+            </div>
+          </div>
+        </section>
+      `;
+      modal.hidden = false;
+      modal.querySelectorAll("[data-confirm-cancel]").forEach((item) => {
+        item.addEventListener("click", () => close(false));
+      });
+      modal.querySelector("[data-confirm-next]").addEventListener("click", () => {
+        if (step === 1) {
+          step = 2;
+          renderStep();
+          return;
+        }
+        close(true);
+      });
+    };
+
+    renderStep();
+  });
 }
 
 function getStats(rows) {
@@ -919,12 +1069,25 @@ function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con f
     title = "Reporte con filtros activos";
     scope = "filtros";
   }
-  setExportStatus(button, "Generando...");
+  try {
+    setExportStatus(button, "Generando...");
+    const tableStart = 730;
+    const pageHeight = Math.max(1191, tableStart + 70 + Math.max(rows.length, 1) * 24);
+    const doc = createPdfDocument(pageHeight);
+    const filename = `reporte-evaluacion-${scope}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    drawExecutivePdf(doc, rows, title, scope, tableStart);
+    downloadBlob(doc.blob(), filename);
+    showToast(`Descarga lista: ${filename}`);
+    setExportStatus(button, "Listo", true);
+  } catch (error) {
+    console.error(error);
+    showToast("No se pudo generar el PDF. Intenta nuevamente.");
+    restoreExportStatus(button);
+  }
+}
+
+function drawExecutivePdf(doc, rows, title, scope, tableStart) {
   const stats = getStats(rows);
-  const tableStart = 730;
-  const rowHeight = 24;
-  const pageHeight = Math.max(1191, tableStart + 70 + Math.max(rows.length, 1) * rowHeight);
-  const doc = createPdfDocument(pageHeight);
   const margin = 42;
   const pageW = 842;
   const green = [5, 40, 21];
@@ -935,7 +1098,8 @@ function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con f
   const line = [229, 226, 218];
 
   doc.rect(0, 0, pageW, 112, [248, 250, 246]);
-  doc.circle(66, 55, 22, null, gold, 2);
+  doc.rect(0, 112, pageW, 4, gold);
+  doc.circle(66, 55, 22, [255, 255, 255], gold, 2);
   doc.text("A", 58, 64, 24, green, "bold");
   doc.text("AVALIACAO", 100, 48, 24, green, "bold");
   doc.text("EXPERIENCIA QUE CONECTA", 101, 67, 8, gold, "bold");
@@ -947,8 +1111,8 @@ function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con f
     ? "Alcance: todas las evaluaciones registradas en todas las ciudades y tiendas"
     : scope.startsWith("ciudad-")
       ? `Alcance: todas las evaluaciones de ciudad seleccionada (${rows[0]?.city || "sin datos"})`
-      : `Filtros: Ciudad ${filters.city} | Tienda ${filters.store} | Periodo ${filters.period} | Idioma ${filters.lang} | Evaluacion ${filters.rating}`;
-  doc.text(filterText, margin, 130, 9, [91, 98, 93]);
+      : `Filtros: Ciudad ${filters.city} | Tienda ${filters.store} | Periodo ${dateFilterLabel(filters)} | Idioma ${filters.lang} | Evaluacion ${filters.rating}`;
+  doc.text(filterText, margin, 132, 9, [91, 98, 93], "regular", 130);
 
   const cards = [
     ["Total evaluaciones", stats.total, green2],
@@ -959,53 +1123,57 @@ function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con f
   ];
   cards.forEach((card, index) => {
     const x = margin + index * 150;
-    doc.roundRect(x, 154, 136, 72, 8, [255, 255, 255], line);
-    doc.circle(x + 24, 190, 18, tint(card[2]), card[2], 1);
-    doc.text(String(card[1]), x + 50, 190, 17, green, "bold");
-    doc.text(card[0], x + 50, 207, 8, [65, 74, 68], "bold");
+    doc.roundRect(x, 158, 136, 76, 8, [255, 255, 255], line);
+    doc.circle(x + 24, 194, 18, tint(card[2]), card[2], 1);
+    doc.text(String(card[1]), x + 50, 191, 17, green, "bold");
+    doc.text(card[0], x + 50, 210, 8, [65, 74, 68], "bold");
   });
 
-  doc.text("Evaluaciones por ciudad", margin, 264, 15, green, "bold");
+  doc.roundRect(margin, 260, 395, 172, 10, [255, 255, 255], line);
+  doc.text("Evaluaciones por ciudad", margin + 18, 286, 15, green, "bold");
   const cityCounts = cityOrder.map((city) => ({ city, count: rows.filter((row) => row.city === city).length }));
   const maxCity = Math.max(1, ...cityCounts.map((item) => item.count));
   cityCounts.forEach((item, index) => {
-    const x = margin + index * 80;
-    const h = Math.max(8, (item.count / maxCity) * 95);
-    doc.rect(x, 382 - h, 34, h, green2);
-    doc.text(String(item.count), x, 398, 9, green, "bold");
-    doc.text(item.city, x, 414, 7, [65, 74, 68]);
+    const x = margin + 30 + index * 70;
+    const h = Math.max(8, (item.count / maxCity) * 92);
+    doc.rect(x, 396 - h, 32, h, index % 2 ? [31, 91, 48] : green2);
+    doc.text(String(item.count), x + 4, 414, 9, green, "bold");
+    doc.text(item.city, x - 8, 428, 7, [65, 74, 68], "regular", 13);
   });
 
-  doc.text("Distribucion", 500, 264, 15, green, "bold");
+  doc.roundRect(470, 260, 330, 172, 10, [255, 255, 255], line);
+  doc.text("Distribucion de respuestas", 492, 286, 15, green, "bold");
   [
     ["Bueno / Bom", stats.goodPct, green2],
     ["Neutro", stats.neutralPct, yellow],
     ["Malo / Ruim", stats.badPct, red],
   ].forEach((item, index) => {
-    const y = 295 + index * 38;
-    doc.text(item[0], 500, y, 10, [65, 74, 68], "bold");
-    doc.roundRect(590, y - 11, 160, 10, 5, [236, 238, 233]);
-    doc.roundRect(590, y - 11, Math.max(2, item[1] * 1.6), 10, 5, item[2]);
-    doc.text(`${item[1]}%`, 762, y, 9, green, "bold");
+    const y = 320 + index * 42;
+    doc.text(item[0], 492, y, 10, [65, 74, 68], "bold");
+    doc.roundRect(606, y - 11, 140, 10, 5, [236, 238, 233]);
+    doc.roundRect(606, y - 11, Math.max(2, item[1] * 1.4), 10, 5, item[2]);
+    doc.text(`${item[1]}%`, 758, y, 9, green, "bold");
   });
 
-  doc.text("Rendimiento por tienda", margin, 462, 15, green, "bold");
-  storeRanking(rows).slice(0, 8).forEach((item, index) => {
-    const y = 492 + index * 24;
-    const width = (item.avg / 5) * 260;
-    doc.text(storeTitle(stores[item.store]), margin, y, 9, [42, 49, 44], "bold");
-    doc.roundRect(238, y - 9, 280, 8, 4, [236, 238, 233]);
-    doc.roundRect(238, y - 9, width, 8, 4, green2);
-    doc.text(`${item.avg.toFixed(2).replace(".", ",")} / 5`, 535, y, 9, green, "bold");
+  doc.roundRect(margin, 458, 758, 176, 10, [255, 255, 255], line);
+  doc.text("Rendimiento por tienda", margin + 18, 486, 15, green, "bold");
+  const ranking = storeRanking(rows).slice(0, 8);
+  if (!ranking.length) {
+    doc.text("Sin datos para mostrar.", margin + 18, 520, 10, [91, 98, 93]);
+  }
+  ranking.forEach((item, index) => {
+    const y = 520 + index * 22;
+    const width = (item.avg / 5) * 280;
+    doc.text(storeTitle(stores[item.store]), margin + 18, y, 9, [42, 49, 44], "bold");
+    doc.roundRect(270, y - 9, 300, 8, 4, [236, 238, 233]);
+    doc.roundRect(270, y - 9, width, 8, 4, green2);
+    doc.text(`${item.avg.toFixed(2).replace(".", ",")} / 5`, 592, y, 9, green, "bold");
+    doc.text(`${item.total} respuestas`, 684, y, 8, [91, 98, 93]);
   });
 
-  doc.text(`Detalle completo de evaluaciones (${rows.length})`, margin, 705, 15, green, "bold");
+  doc.text(`Detalle completo de evaluaciones (${rows.length})`, margin, 704, 15, green, "bold");
   drawPdfTable(doc, rows, tableStart);
-  doc.text("Reporte generado automaticamente por el sistema de evaluacion QR.", margin, 575, 8, [110, 116, 111]);
-  const filename = `reporte-evaluacion-${scope}-${new Date().toISOString().slice(0, 10)}.pdf`;
-  downloadBlob(doc.blob(), filename);
-  showToast(`Descarga lista: ${filename}`);
-  setExportStatus(button, "Listo", true);
+  doc.text("Reporte generado automaticamente por el sistema de evaluacion QR.", margin, 670, 8, [110, 116, 111]);
 }
 
 function slugify(value) {
@@ -1057,6 +1225,23 @@ function downloadBlob(blob, filename) {
   }, 4000);
 }
 
+async function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const input = document.createElement("input");
+  input.value = text;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.left = "-9999px";
+  document.body.appendChild(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("Copy failed");
+}
+
 function setExportStatus(button, text, restore = false) {
   if (!button) return;
   if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
@@ -1068,6 +1253,12 @@ function setExportStatus(button, text, restore = false) {
       button.disabled = false;
     }, 1400);
   }
+}
+
+function restoreExportStatus(button) {
+  if (!button) return;
+  button.textContent = button.dataset.originalText || button.textContent;
+  button.disabled = false;
 }
 
 function showToast(message) {

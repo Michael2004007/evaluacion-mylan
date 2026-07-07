@@ -138,6 +138,16 @@ async function handleApi(req, res, url) {
     return true;
   }
 
+  if (url.pathname.startsWith("/api/evaluations/city/") && req.method === "DELETE") {
+    const city = decodeURIComponent(url.pathname.replace("/api/evaluations/city/", ""));
+    const evaluations = readEvaluations();
+    const remaining = evaluations.filter((evaluation) => evaluation.city !== city);
+    const deleted = evaluations.length - remaining.length;
+    writeEvaluations(remaining);
+    send(res, 200, JSON.stringify({ city, deleted, total: remaining.length }));
+    return true;
+  }
+
   if (url.pathname === "/api/evaluations" && req.method === "POST") {
     try {
       const payload = await parseJson(req);
