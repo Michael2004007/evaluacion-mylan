@@ -887,6 +887,11 @@ function exportCityReport(format, button) {
 }
 
 function exportCsv(rows = applyFilters(evaluationsCache), filename = "evaluaciones-filtradas.csv", button) {
+  if (!Array.isArray(rows)) {
+    button = rows?.currentTarget || button;
+    rows = applyFilters(evaluationsCache);
+    filename = "evaluaciones-filtradas.csv";
+  }
   setExportStatus(button, "Generando...");
   const csv = [
     ["Fecha y hora", "Ciudad", "Tienda", "Idioma", "Evaluación", "Sugerencia", "Celular"],
@@ -908,6 +913,12 @@ function exportCsv(rows = applyFilters(evaluationsCache), filename = "evaluacion
 }
 
 function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con filtros activos", scope = "filtros", button) {
+  if (!Array.isArray(rows)) {
+    button = rows?.currentTarget || button;
+    rows = applyFilters(evaluationsCache);
+    title = "Reporte con filtros activos";
+    scope = "filtros";
+  }
   setExportStatus(button, "Generando...");
   const stats = getStats(rows);
   const tableStart = 730;
