@@ -421,9 +421,17 @@ function updateDashboard() {
     });
   });
   const reportPdf = document.getElementById("reportPdfBtn");
-  if (reportPdf) reportPdf.addEventListener("click", exportPdf);
+  if (reportPdf) reportPdf.addEventListener("click", () => exportPdf(applyFilters(evaluationsCache), "Reporte con filtros activos", "filtros"));
   const reportCsv = document.getElementById("reportCsvBtn");
-  if (reportCsv) reportCsv.addEventListener("click", exportCsv);
+  if (reportCsv) reportCsv.addEventListener("click", () => exportCsv(applyFilters(evaluationsCache), "evaluaciones-filtradas.csv"));
+  const allPdf = document.getElementById("allPdfBtn");
+  if (allPdf) allPdf.addEventListener("click", () => exportPdf(evaluationsCache, "Reporte completo de todas las evaluaciones", "todas"));
+  const allCsv = document.getElementById("allCsvBtn");
+  if (allCsv) allCsv.addEventListener("click", () => exportCsv(evaluationsCache, "evaluaciones-todas.csv"));
+  const cityPdf = document.getElementById("cityPdfBtn");
+  if (cityPdf) cityPdf.addEventListener("click", () => exportCityReport("pdf"));
+  const cityCsv = document.getElementById("cityCsvBtn");
+  if (cityCsv) cityCsv.addEventListener("click", () => exportCityReport("csv"));
 }
 
 function dashboardView(rows, stats) {
@@ -500,9 +508,34 @@ function reportsView(rows, stats) {
         <p>Exportá un PDF premium con los mismos filtros activos del dashboard, métricas, ranking, distribución y últimas respuestas.</p>
       </div>
       <div class="report-actions">
-        <button class="submit-btn compact" id="reportPdfBtn" type="button">Exportar PDF profesional</button>
-        <button class="outline-btn" id="reportCsvBtn" type="button">Descargar CSV</button>
+        <button class="submit-btn compact" id="reportPdfBtn" type="button">PDF con filtros actuales</button>
+        <button class="outline-btn" id="reportCsvBtn" type="button">CSV con filtros actuales</button>
       </div>
+    </section>
+    <section class="report-downloads">
+      <article class="panel report-download-card">
+        <div>
+          <h2>Todas las evaluaciones</h2>
+          <p>Descarga completa con todas las ciudades, tiendas, celulares, sugerencias, idioma, fecha y hora.</p>
+        </div>
+        <div class="report-actions inline">
+          <button class="submit-btn compact" id="allPdfBtn" type="button">PDF completo</button>
+          <button class="outline-btn" id="allCsvBtn" type="button">CSV completo</button>
+        </div>
+      </article>
+      <article class="panel report-download-card">
+        <div>
+          <h2>Evaluaciones por ciudad</h2>
+          <p>Elegí una ciudad y descargá todas sus respuestas completas, no solo las recientes.</p>
+          <select id="reportCitySelect">
+            ${cityOrder.map((city) => `<option>${city}</option>`).join("")}
+          </select>
+        </div>
+        <div class="report-actions inline">
+          <button class="submit-btn compact" id="cityPdfBtn" type="button">PDF por ciudad</button>
+          <button class="outline-btn" id="cityCsvBtn" type="button">CSV por ciudad</button>
+        </div>
+      </article>
     </section>
     <section class="kpis">
       ${kpi("▣", "Total incluido", stats.total, "Según filtros")}
@@ -511,7 +544,7 @@ function reportsView(rows, stats) {
       ${kpi("😞", "Más negativas", worst.name, worst.note, "red")}
       ${kpi("▥", "Formato", "PDF", "Visual ejecutivo")}
     </section>
-    ${recentTable(rows, "Datos incluidos en el reporte", 12)}
+    ${recentTable(rows, "Vista previa de datos incluidos por filtros", 12)}
   `;
 }
 
@@ -841,26 +874,46 @@ function openSupportModal() {
   modal.querySelector(".close-btn").addEventListener("click", () => modal.hidden = true);
 }
 
-function exportCsv() {
-  const rows = applyFilters(evaluationsCache);
+function exportCityReport(format) {
+  const city = document.getElementById("reportCitySelect")?.value || cityOrder[0];
+  const rows = evaluationsCache.filter((row) => row.city === city);
+  const slug = slugify(city);
+  if (format === "pdf") {
+    exportPdf(rows, `Reporte completo - ${city}`, `ciudad-${slug}`);
+    return;
+  }
+  exportCsv(rows, `evaluaciones-${slug}.csv`);
+}
+
+function exportCsv(rows = applyFilters(evaluationsCache), filename = "evaluaciones-filtradas.csv") {
   const csv = [
     ["Fecha y hora", "Ciudad", "Tienda", "Idioma", "Evaluación", "Sugerencia", "Celular"],
-    ...rows.map((row) => [row.createdAt, row.city, row.store, row.language, row.rating, row.suggestion, row.phone]),
+    ...rows.map((row) => [
+      row.createdAt,
+      row.city,
+      storeTitle(stores[row.store] || { name: row.store }),
+      row.language,
+      ratingLabel(row),
+      row.suggestion,
+      row.phone,
+    ]),
   ].map((line) => line.map((value) => `"${String(value || "").replace(/"/g, '""')}"`).join(",")).join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "reporte-evaluaciones.csv";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
 
-function exportPdf() {
-  const rows = applyFilters(evaluationsCache);
+function exportPdf(rows = applyFilters(evaluationsCache), title = "Reporte con filtros activos", scope = "filtros") {
   const stats = getStats(rows);
-  const doc = createPdfDocument();
+  const tableStart = 730;
+  const rowHeight = 24;
+  const pageHeight = Math.max(1191, tableStart + 70 + Math.max(rows.length, 1) * rowHeight);
+  const doc = createPdfDocument(pageHeight);
   const margin = 42;
   const pageW = 842;
   const green = [5, 40, 21];
@@ -875,11 +928,16 @@ function exportPdf() {
   doc.text("A", 58, 64, 24, green, "bold");
   doc.text("AVALIACAO", 100, 48, 24, green, "bold");
   doc.text("EXPERIENCIA QUE CONECTA", 101, 67, 8, gold, "bold");
-  doc.text("Reporte ejecutivo de evaluacion de atencion", margin, 104, 20, green, "bold");
+  doc.text(title, margin, 104, 20, green, "bold");
   doc.text(`Generado: ${new Date().toLocaleString("es-PY")}`, 620, 104, 9, [91, 98, 93]);
 
   const filters = getFilters();
-  doc.text(`Filtros: Ciudad ${filters.city} | Tienda ${filters.store} | Periodo ${filters.period} | Idioma ${filters.lang} | Evaluacion ${filters.rating}`, margin, 130, 9, [91, 98, 93]);
+  const filterText = scope === "todas"
+    ? "Alcance: todas las evaluaciones registradas en todas las ciudades y tiendas"
+    : scope.startsWith("ciudad-")
+      ? `Alcance: todas las evaluaciones de ciudad seleccionada (${rows[0]?.city || "sin datos"})`
+      : `Filtros: Ciudad ${filters.city} | Tienda ${filters.store} | Periodo ${filters.period} | Idioma ${filters.lang} | Evaluacion ${filters.rating}`;
+  doc.text(filterText, margin, 130, 9, [91, 98, 93]);
 
   const cards = [
     ["Total evaluaciones", stats.total, green2],
@@ -930,10 +988,19 @@ function exportPdf() {
     doc.text(`${item.avg.toFixed(2).replace(".", ",")} / 5`, 535, y, 9, green, "bold");
   });
 
-  doc.text("Ultimas respuestas", margin, 705, 15, green, "bold");
-  drawPdfTable(doc, rows.slice(0, 10), 730);
+  doc.text(`Detalle completo de evaluaciones (${rows.length})`, margin, 705, 15, green, "bold");
+  drawPdfTable(doc, rows, tableStart);
   doc.text("Reporte generado automaticamente por el sistema de evaluacion QR.", margin, 575, 8, [110, 116, 111]);
-  downloadBlob(doc.blob(), `reporte-evaluacion-${new Date().toISOString().slice(0, 10)}.pdf`);
+  downloadBlob(doc.blob(), `reporte-evaluacion-${scope}-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function slugify(value) {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 function tint(rgb) {
@@ -973,10 +1040,9 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function createPdfDocument() {
+function createPdfDocument(pageH = 1191) {
   const objects = [];
   let content = "";
-  const pageH = 1191;
   const esc = (text) => String(text ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")

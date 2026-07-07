@@ -974,6 +974,43 @@ select:focus {
   min-width: 230px;
 }
 
+.report-actions.inline {
+  align-content: center;
+}
+
+.report-downloads {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.report-download-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 178px;
+  background:
+    linear-gradient(180deg, #ffffff, #fbfdf8),
+    radial-gradient(circle at 100% 0%, rgba(191, 138, 19, 0.08), transparent 32%);
+}
+
+.report-download-card h2 {
+  margin: 0;
+  color: var(--green-950);
+}
+
+.report-download-card p {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.report-download-card select {
+  max-width: 320px;
+}
+
 .submit-btn.compact {
   height: 48px;
   margin-top: 0;
@@ -1268,11 +1305,13 @@ th {
   .kpis,
   .analytics,
   .stores-grid,
+  .report-downloads,
   .qr-grid {
     grid-template-columns: 1fr;
   }
 
   .report-hero,
+  .report-download-card,
   .city-summary,
   .qr-row {
     display: grid;
