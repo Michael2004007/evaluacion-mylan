@@ -1,0 +1,13 @@
+{
+  "name": "evaluacion-mylan",
+  "version": "1.0.0",
+  "description": "Sistema web de evaluacion de atencion por QR para tiendas.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}
